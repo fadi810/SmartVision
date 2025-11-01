@@ -32,7 +32,7 @@ It also includes tools for model training and exploratory experiments.
 
   ```bash
   python train.py --data path/to/data.yaml --model yolov11n.pt --epochs 100 --batch 16 --benchmark
-````
+  ```
 
 **Arguments:**
 
