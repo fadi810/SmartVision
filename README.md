@@ -82,8 +82,3 @@ It also includes tools for model training and exploratory experiments.
 ## Notes
 
 * The `.pt` models used for inference are **`best_yolov8n.pt`** and **`best_yolov11n.pt`**.
-
-```
-
-Would you like me to also update the `train.py` code itself to accept these command-line arguments and optional benchmarking?
-```
