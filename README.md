@@ -2,7 +2,14 @@
 This project provides a local object detection system using a Python WebSocket server for real-time inference and a simple frontend for uploading images, videos, or live camera feeds.
 It also includes tools for model training and exploratory experiments.
 
-Overview
+## Overview
+
+The project contains several components working together:
+- **`server.py`** – Runs a WebSocket server using `websockets` and `ultralytics`. It receives images, performs YOLO inference (on CPU by default), and returns detection results in JSON format.
+- **`index.html`** – Frontend interface for uploading images, streaming live video, and viewing detection results. The page displays bounding boxes and outputs model details, inference time, and object coordinates.
+- **`client.py`** – A Python simulation of a WebSocket client, useful for testing the server without a browser.
+- **`main.ipynb`** – Jupyter notebook used for exploratory data analysis, image augmentation, and noise injection during the model development phase.
+- **`train.py`** – Handles YOLO model training. It accepts arguments for model configuration and dataset YAML file for flexible training setups.
 
 server.py
 Hosts a WebSocket server (websockets.serve) that receives image or video frames from clients.
