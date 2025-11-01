@@ -1,0 +1,3 @@
+https://medium.com/@AlexanderObregon/building-real-time-applications-with-python-and-websockets-eb33a4098e02
+https://docs.ultralytics.com/modes/predict/#keypoints
+https://public.roboflow.com/object-detection/pascal-voc-2012

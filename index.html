@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>WebSocket Debug Page</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #111;
+            color: #eee;
+            padding: 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            background: #333;
+            color: #eee;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #444;
+        }
+
+        #preview {
+            margin-top: 15px;
+            max-width: 480px;
+            border: 2px solid #333;
+            display: none;
+        }
+
+        #logs {
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            margin-top: 20px;
+            height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            border: 2px solid #333;
+        }
+
+        #liveFeed {
+            display: none;
+            margin-top: 10px;
+            border: 2px solid #333;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Debug Upload Page</h2>
+
+    <button id="uploadImage">Upload Image</button>
+    <button id="uploadVideo">Upload Video</button>
+    <button id="uploadFeed">Upload Active Video Feed</button>
+    <button id="stopFeed" style="display:none;">Stop Feed</button>
+
+    <input type="file" id="fileInput" accept="image/*,video/*" style="display:none">
+
+    <br>
+
+    <div style="display: flex; gap: 20px; align-items: flex-start; margin-top: 15px;">
+        <!-- Image/Video + Canvas -->
+        <div id="mediaContainer" style="position: relative; display: inline-block;">
+            <img id="preview" alt="Preview"
+                style="max-width: 640px; display: none; border: 1px solid #ccc; border-radius: 8px;">
+            <video id="liveFeed" autoplay muted playsinline
+                style="max-width: 640px; display: none; border: 1px solid #ccc; border-radius: 8px;">
+            </video>
+            <canvas id="overlay" style="position: absolute; left: 0; top: 0; pointer-events: none;"></canvas>
+        </div>
+
+        <!-- JSON Output -->
+        <div id="jsonOutput" style="width: 400px; height: 480px; overflow-y: auto; border: 1px solid #ccc;
+            padding: 10px; font-family: monospace; border-radius: 8px;">
+            <strong>Waiting for model output...</strong>
+        </div>
+    </div>
+
+    
+
+    <div id="logs"></div>
+
+
+    <script>
+        const ws = new WebSocket("ws://localhost:12345");
+        ws.binaryType = "arraybuffer";
+
+        const logs = document.getElementById("logs");
+        const preview = document.getElementById("preview");
+        const overlay = document.getElementById("overlay");
+        const ctx = overlay.getContext("2d");
+        const video = document.getElementById("liveFeed");
+        const stopFeedBtn = document.getElementById("stopFeed");
+        const fileInput = document.getElementById("fileInput");
+        let feedInterval = null;
+
+        ws.onopen = () => log("Connected to WebSocket server");
+        ws.onclose = () => log("Connection closed");
+        ws.onerror = (e) => log("WebSocket error: " + e.message);
+
+        ws.onmessage = event => {
+            try {
+                const jsonData = JSON.parse(event.data);
+                log(JSON.stringify(jsonData))
+                const outputDiv = document.getElementById("jsonOutput");
+
+                const now = new Date().toLocaleTimeString();
+                const header = `<strong>[${now}] ${jsonData.model}</strong><br>
+                            Processing Time: ${jsonData.time_ms.toFixed(2)} ms<br><br>`;
+
+                const detections = jsonData.detections.map(det => {
+                    return `• <b>${det.name}</b> (${(det.confidence * 100).toFixed(1)}%)<br>
+                Box: x1=${det.box.x1.toFixed(1)}, y1=${det.box.y1.toFixed(1)}, x2=${det.box.x2.toFixed(1)}, y2=${det.box.y2.toFixed(1)}<br><br>`;
+                }).join("");
+
+                outputDiv.innerHTML = header + detections;
+
+
+                
+                if (preview.style.display !== "none" && preview.complete && preview.naturalWidth > 0) {
+                    // Draw once the image is loaded
+                    drawDetections(jsonData);
+                } else if (video.style.display !== "none" && video.readyState >= 2) {
+                    // Draw if video is already playing (readyState 2 = has enough data)
+                    drawDetections(jsonData);
+                } else {
+                    // Set up load handlers for image or video
+                    if (preview.style.display !== "none") {
+                        preview.onload = () => drawDetections(jsonData);
+                    } else if (video.style.display !== "none") {
+                        video.onloadeddata = () => drawDetections(jsonData);
+                    }
+                }
+
+
+
+
+            } catch (err) {
+                console.error("Error parsing JSON:", err);
+            }
+        };
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            logs.textContent += `[${time}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        // ---- Drawing bounding boxes ----
+        function drawDetections(result) {
+                const target = preview.style.display !== "none" ? preview : video;
+
+                if (!target || !result.detections) return;
+
+                // Match overlay to target (image or video)
+                const rect = target.getBoundingClientRect();
+                overlay.width = rect.width;
+                overlay.height = rect.height;
+                overlay.style.width = rect.width + "px";
+                overlay.style.height = rect.height + "px";
+                overlay.style.left = target.offsetLeft + "px";
+                overlay.style.top = target.offsetTop + "px";
+
+                ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+                const scaleX = rect.width / target.videoWidth || rect.width / target.naturalWidth;
+                const scaleY = rect.height / target.videoHeight || rect.height / target.naturalHeight;
+
+                ctx.lineWidth = 2;
+                ctx.font = "14px monospace";
+                ctx.textBaseline = "top";
+                ctx.strokeStyle = "#00FF00";
+                ctx.fillStyle = "#00FF00";
+
+                for (const det of result.detections) {
+                    const b = det.box;
+                    const x = b.x1 * scaleX;
+                    const y = b.y1 * scaleY;
+                    const w = (b.x2 - b.x1) * scaleX;
+                    const h = (b.y2 - b.y1) * scaleY;
+
+                    ctx.strokeRect(x, y, w, h);
+                    const label = `${det.name} ${(det.confidence * 100).toFixed(1)}%`;
+                    ctx.fillText(label, x + 4, y + 4);
+                }
+            }
+
+
+        // ---- Upload Buttons ----
+        document.getElementById("uploadImage").onclick = () => {
+            fileInput.value = "";
+            fileInput.accept = "image/*";
+            fileInput.onchange = sendFile;
+            fileInput.click();
+        };
+
+        document.getElementById("uploadImage").addEventListener("change", async event => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const img = document.getElementById("preview");
+            img.src = URL.createObjectURL(file);
+            img.style.display = "block";
+
+            const arrayBuffer = await file.arrayBuffer();
+            ws.send(arrayBuffer);
+        });
+
+        document.getElementById("uploadVideo").onclick = () => {
+            fileInput.value = "";
+            fileInput.accept = "video/*";
+            fileInput.onchange = sendFile;
+            fileInput.click();
+        };
+
+        async function sendFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            event.preventDefault();
+            event.stopPropagation();
+
+            log(`Sending: ${file.name} (${file.type})`);
+
+            if (file.type.startsWith("image/")) {
+                preview.src = URL.createObjectURL(file);
+                preview.onload = () => {
+                    overlay.width = preview.width;
+                    overlay.height = preview.height;
+                    preview.style.display = "block";
+                };
+            }
+
+            const arrayBuffer = await file.arrayBuffer();
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "file", name: file.name, mimetype: file.type }));
+                ws.send(arrayBuffer);
+            } else {
+                log("WebSocket not open");
+            }
+        }
+
+        // ---- Live Feed ----
+        document.getElementById("uploadFeed").onclick = async () => {
+                try {
+                    // Hide image and clear its overlay
+                    preview.style.display = "none";
+                    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+                    // Show video feed
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    video.srcObject = stream;
+                    video.style.display = "block";
+                    stopFeedBtn.style.display = "inline-block";
+
+                    // Match overlay to video size
+                    overlay.width = video.width;
+                    overlay.height = video.height;
+
+                    const canvas = document.createElement("canvas");
+                    const ctx2 = canvas.getContext("2d");
+
+                    feedInterval = setInterval(() => {
+                        if (ws.readyState !== WebSocket.OPEN) return;
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx2.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        canvas.toBlob(blob => {
+                            if (blob) {
+                                blob.arrayBuffer().then(buf => {
+                                    ws.send(JSON.stringify({ type: "frame", mimetype: "image/jpeg" }));
+                                    ws.send(buf);
+                                });
+                            }
+                        }, "image/jpeg", 0.6);
+                    }, 100);
+
+                    log("Started live video feed");
+                } catch (err) {
+                    log("Camera error: " + err);
+                }
+            };
+
+
+        stopFeedBtn.onclick = () => {
+            clearInterval(feedInterval);
+            video.srcObject?.getTracks().forEach(t => t.stop());
+            video.style.display = "none";
+            stopFeedBtn.style.display = "none";
+            
+            // Clear overlay canvas
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            log("Stopped live feed");
+        };
+    </script>
+
+
+</body>
+
+</html>
