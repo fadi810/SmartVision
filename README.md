@@ -1,6 +1,5 @@
-Here’s the updated **README.md** section with the modified **train** part to reflect the new argument support and benchmarking option:
 
-````markdown
+
 # SmartVision
 This project provides a local object detection system using a **Python WebSocket server** for real-time inference and a **simple frontend** for uploading images, videos, or live camera feeds.
 It also includes tools for model training and exploratory experiments.
