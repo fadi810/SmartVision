@@ -1,0 +1,28 @@
+# Ignore folders
+Benchmarks/
+extras/
+roboflow/
+runs/
+
+# Keep .pt files except these specific ones
+!best_yolov8n.pt
+!best_yolov11n.pt
+
+# Ignore other junk or large files
+*.onnx
+*.torchscript
+*.pnnxsim.onnx
+*.pt
+!best_yolov8n.pt
+!best_yolov11n.pt
+
+# Python / Jupyter
+__pycache__/
+*.ipynb_checkpoints/
+*.pyc
+*.pyo
+*.pyd
+*.env
+*.venv
+.env
+.venv

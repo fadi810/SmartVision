@@ -44,7 +44,6 @@ if __name__ == "__main__":
         batch=args.batch,
         workers=4,
         device=0 if torch.cuda.is_available() else "cpu",
-        project=f"runs/detect/train_{modelname}",
         half=True,
         augment=True,
         agnostic_nms=True

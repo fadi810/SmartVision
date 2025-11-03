@@ -48,6 +48,39 @@
             margin-top: 10px;
             border: 2px solid #333;
         }
+
+        #modelList {
+            position: fixed;
+            right: 20px;
+            top: 20px;
+            border: 1px solid #333;
+            padding: 10px;
+            border-radius: 8px;
+            background: #000;
+            width: 240px;
+            z-index: 100;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .model-item {
+            cursor: pointer;
+            padding: 6px 10px;
+            margin: 4px 0;
+            border-radius: 6px;
+            background: #222;
+            color: #ccc;
+            transition: background 0.2s;
+        }
+
+        .model-item:hover {
+            background: #333;
+        }
+
+        .model-active {
+            background: #0a0;
+            color: #fff;
+        }
     </style>
 </head>
 
@@ -60,6 +93,13 @@
     <button id="stopFeed" style="display:none;">Stop Feed</button>
 
     <input type="file" id="fileInput" accept="image/*,video/*" style="display:none">
+
+    <div id="modelList">
+        <strong>Available Models:</strong>
+        <div id="modelsContainer">
+            <em>Waiting for server...</em>
+        </div>
+    </div>
 
     <br>
 
@@ -90,60 +130,98 @@
         const ws = new WebSocket("ws://localhost:12345");
         ws.binaryType = "arraybuffer";
 
-        const logs = document.getElementById("logs");
-        const preview = document.getElementById("preview");
-        const overlay = document.getElementById("overlay");
-        const ctx = overlay.getContext("2d");
-        const video = document.getElementById("liveFeed");
-        const stopFeedBtn = document.getElementById("stopFeed");
-        const fileInput = document.getElementById("fileInput");
-        let feedInterval = null;
+            const logs = document.getElementById("logs");
+            const preview = document.getElementById("preview");
+            const overlay = document.getElementById("overlay");
+            const ctx = overlay.getContext("2d");
+            const video = document.getElementById("liveFeed");
+            const stopFeedBtn = document.getElementById("stopFeed");
+            const fileInput = document.getElementById("fileInput");
+            const modelsContainer = document.getElementById("modelsContainer");
+            let currentModel = null;
+            let feedInterval = null;
 
         ws.onopen = () => log("Connected to WebSocket server");
         ws.onclose = () => log("Connection closed");
         ws.onerror = (e) => log("WebSocket error: " + e.message);
 
         ws.onmessage = event => {
-            try {
-                const jsonData = JSON.parse(event.data);
-                log(JSON.stringify(jsonData))
-                const outputDiv = document.getElementById("jsonOutput");
+                try {
+                    const jsonData = JSON.parse(event.data);
+                    log(JSON.stringify(jsonData));
 
-                const now = new Date().toLocaleTimeString();
-                const header = `<strong>[${now}] ${jsonData.model}</strong><br>
+                    // --- Handle model list ---
+                    if (jsonData.type === "model_list") {
+                        displayModelList(jsonData.available_models, jsonData.current_model);
+                        log(`Received model list: ${jsonData.available_models.join(", ")}`);
+                        return;
+                    }
+
+                    // --- Handle model change confirmation ---
+                    if (jsonData.type === "model_change_confirmation") {
+                        log(jsonData.message);
+                        highlightActiveModel(jsonData.message.split("to ")[1]);
+                        return;
+                    }
+
+                    // --- Handle detection results ---
+                    if (jsonData.detections) {
+                        const outputDiv = document.getElementById("jsonOutput");
+
+                        const now = new Date().toLocaleTimeString();
+                        const header = `<strong>[${now}] ${jsonData.model}</strong><br>
                             Processing Time: ${jsonData.time_ms.toFixed(2)} ms<br><br>`;
 
-                const detections = jsonData.detections.map(det => {
-                    return `• <b>${det.name}</b> (${(det.confidence * 100).toFixed(1)}%)<br>
+                        const detections = jsonData.detections.map(det => {
+                            return `• <b>${det.name}</b> (${(det.confidence * 100).toFixed(1)}%)<br>
                 Box: x1=${det.box.x1.toFixed(1)}, y1=${det.box.y1.toFixed(1)}, x2=${det.box.x2.toFixed(1)}, y2=${det.box.y2.toFixed(1)}<br><br>`;
-                }).join("");
+                        }).join("");
 
-                outputDiv.innerHTML = header + detections;
+                        outputDiv.innerHTML = header + detections;
 
-
-                
-                if (preview.style.display !== "none" && preview.complete && preview.naturalWidth > 0) {
-                    // Draw once the image is loaded
-                    drawDetections(jsonData);
-                } else if (video.style.display !== "none" && video.readyState >= 2) {
-                    // Draw if video is already playing (readyState 2 = has enough data)
-                    drawDetections(jsonData);
-                } else {
-                    // Set up load handlers for image or video
-                    if (preview.style.display !== "none") {
-                        preview.onload = () => drawDetections(jsonData);
-                    } else if (video.style.display !== "none") {
-                        video.onloadeddata = () => drawDetections(jsonData);
+                        // Draw detections
+                        drawDetections(jsonData);
+                    } else {
+                        log("Received message without detections");
                     }
+                } catch (err) {
+                    console.error("Error parsing JSON:", err);
                 }
+            };
 
 
+    // ---- Model display and click handling ----
+        function displayModelList(models, current) {
+            modelsContainer.innerHTML = "";
+            currentModel = current;
 
+            models.forEach(modelName => {
+                const div = document.createElement("div");
+                div.textContent = modelName;
+                div.className = "model-item" + (modelName === current ? " model-active" : "");
+                div.onclick = () => {
+                    if (modelName === currentModel) return;
+                    ws.send(JSON.stringify({
+                        command: "change_model",
+                        model_name: modelName
+                    }));
+                    log(`Requested model change to ${modelName}`);
+                };
+                modelsContainer.appendChild(div);
+            });
+        }
 
-            } catch (err) {
-                console.error("Error parsing JSON:", err);
-            }
-        };
+        function highlightActiveModel(name) {
+            const items = document.querySelectorAll(".model-item");
+            items.forEach(item => {
+                if (item.textContent === name) {
+                    item.classList.add("model-active");
+                    currentModel = name;
+                } else {
+                    item.classList.remove("model-active");
+                }
+            });
+        }
 
         function log(message) {
             const time = new Date().toLocaleTimeString();
